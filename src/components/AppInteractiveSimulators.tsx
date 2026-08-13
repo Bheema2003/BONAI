@@ -8,6 +8,41 @@ interface SimulatorProps {
   type: 'calculator' | 'tip-calc' | 'time-calc' | 'unit-converter' | 'scratchpad';
 }
 
+function safeEvaluateExpression(expr: string): number {
+  const sanitized = expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/[^0-9+\-*/.]/g, '');
+  const tokens = sanitized.match(/(\d+(\.\d+)?|[+\-*/])/g);
+  if (!tokens || tokens.length === 0) return 0;
+  
+  const pass1: (number | string)[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === '*' || token === '/') {
+      const prev = Number(pass1.pop() || 0);
+      const nextToken = tokens[++i];
+      const next = nextToken !== undefined ? Number(nextToken) : 1;
+      if (token === '*') {
+        pass1.push(prev * next);
+      } else {
+        pass1.push(next !== 0 ? prev / next : 0);
+      }
+    } else if (token === '+' || token === '-') {
+      pass1.push(token);
+    } else {
+      pass1.push(Number(token));
+    }
+  }
+
+  let result = typeof pass1[0] === 'number' ? pass1[0] : 0;
+  for (let i = 1; i < pass1.length; i += 2) {
+    const op = pass1[i];
+    const nextVal = pass1[i + 1];
+    const next = nextVal !== undefined ? Number(nextVal) : 0;
+    if (op === '+') result += next;
+    else if (op === '-') result -= next;
+  }
+  return isNaN(result) ? 0 : result;
+}
+
 export const AppInteractiveSimulators: React.FC<SimulatorProps> = ({ type }) => {
   // Calculator State
   const [calcDisplay, setCalcDisplay] = useState('0');
@@ -72,11 +107,8 @@ export const AppInteractiveSimulators: React.FC<SimulatorProps> = ({ type }) => 
   const handleCalcEquals = () => {
     if (!calcFormula) return;
     try {
-      const fullExpression = `${calcFormula}${calcDisplay}`.replace(/×/g, '*').replace(/÷/g, '/');
-      // safe eval for basic numbers and operators only
-      const sanitized = fullExpression.replace(/[^0-9+\-*/.]/g, '');
-      // eslint-disable-next-line no-new-func
-      const result = Function(`'use strict'; return (${sanitized})`)();
+      const fullExpression = `${calcFormula}${calcDisplay}`;
+      const result = safeEvaluateExpression(fullExpression);
       const formatted = Number.isInteger(result) ? String(result) : Number(result).toFixed(4).replace(/\.?0+$/, '');
       setCalcFormula(`${calcFormula}${calcDisplay} =`);
       setCalcDisplay(formatted);
